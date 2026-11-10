@@ -16,7 +16,6 @@ export default function NewExpense() {
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   if (cards.length === 0) {
     return (
@@ -34,17 +33,15 @@ export default function NewExpense() {
   const remaining = card ? card.limit - (card.used || 0) : 0;
   const exceeds = card && value > 0 && value > remaining;
 
-  const save = async () => {
+  const save = () => {
     if (!card) return Alert.alert('Atenção', 'Escolha um cartão.');
     if (!description.trim()) return Alert.alert('Atenção', 'Informe uma descrição.');
     if (!(value > 0)) return Alert.alert('Atenção', 'Informe um valor maior que zero.');
-    setSaving(true);
     try {
-      await addExpense({ cardId, description: description.trim(), amount: value, date });
+      addExpense({ cardId, description: description.trim(), amount: value, date });
       router.back();
     } catch (e) {
       Alert.alert('Erro ao salvar', e.message);
-      setSaving(false);
     }
   };
 
@@ -102,11 +99,7 @@ export default function NewExpense() {
         </Text>
       )}
 
-      <PrimaryButton
-        title={saving ? 'Salvando...' : 'Salvar despesa'}
-        onPress={save}
-        disabled={saving}
-      />
+      <PrimaryButton title="Salvar despesa" onPress={save} />
     </ScrollView>
   );
 }

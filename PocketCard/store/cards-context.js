@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import {
   addDoc,
   collection,
@@ -15,18 +16,23 @@ import { getInvoice } from '../utils/invoice';
 
 const CardsContext = createContext(null);
 
+const reportError = (e) => Alert.alert('Erro ao salvar no Firebase', e?.message || String(e));
+
 export function CardsProvider({ children }) {
   const [cards, setCards] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [offline, setOffline] = useState(false);
 
   // Tempo real: qualquer mudança no Firestore atualiza as telas
   useEffect(() => {
     const unsubCards = onSnapshot(
       query(collection(db, 'cards'), orderBy('createdAt', 'asc')),
+      { includeMetadataChanges: true },
       (snap) => {
         setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setOffline(snap.metadata.fromCache);
         setLoading(false);
       },
       (e) => {
@@ -55,11 +61,13 @@ export function CardsProvider({ children }) {
     syncDueReminders(items).catch(() => {});
   }, [cards, transactions, loading]);
 
-  const addCard = (data) =>
-    addDoc(collection(db, 'cards'), { ...data, used: 0, createdAt: Date.now() });
+  // Não usa await: o Firestore aplica a gravação local na hora e sincroniza depois
+  const addCard = (data) => {
+    addDoc(collection(db, 'cards'), { ...data, used: 0, createdAt: Date.now() }).catch(reportError);
+  };
 
   // Lança a despesa e desconta do limite do cartão escolhido (tudo em um único batch)
-  const addExpense = async ({ cardId, description, amount, date }) => {
+  const addExpense = ({ cardId, description, amount, date }) => {
     const card = cards.find((c) => c.id === cardId);
     if (!card) throw new Error('Cartão não encontrado.');
     const batch = writeBatch(db);
@@ -72,9 +80,9 @@ export function CardsProvider({ children }) {
       createdAt: Date.now(),
     });
     batch.update(doc(db, 'cards', cardId), { used: increment(amount) });
-    await batch.commit();
+    batch.commit().catch(reportError);
     if ((card.used || 0) + amount >= card.limit) {
-      await notifyLimitReached(card).catch(() => {});
+      notifyLimitReached(card).catch(() => {});
     }
   };
 
@@ -85,7 +93,7 @@ export function CardsProvider({ children }) {
     if (!tx.paid) {
       batch.update(doc(db, 'cards', tx.cardId), { used: increment(-tx.amount) });
     }
-    await batch.commit();
+    batch.commit().catch(reportError);
   };
 
   // Pagar a fatura libera o limite e marca as despesas como pagas
@@ -94,7 +102,7 @@ export function CardsProvider({ children }) {
     const batch = writeBatch(db);
     items.forEach((t) => batch.update(doc(db, 'transactions', t.id), { paid: true }));
     batch.update(doc(db, 'cards', card.id), { used: increment(-total) });
-    await batch.commit();
+    batch.commit().catch(reportError);
   };
 
   const removeCard = async (card) => {
@@ -103,7 +111,7 @@ export function CardsProvider({ children }) {
       .filter((t) => t.cardId === card.id)
       .forEach((t) => batch.delete(doc(db, 'transactions', t.id)));
     batch.delete(doc(db, 'cards', card.id));
-    await batch.commit();
+    batch.commit().catch(reportError);
   };
 
   return (
@@ -113,6 +121,7 @@ export function CardsProvider({ children }) {
         transactions,
         loading,
         error,
+        offline,
         addCard,
         addExpense,
         removeExpense,

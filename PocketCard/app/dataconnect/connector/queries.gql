@@ -1,0 +1,36 @@
+query GetUserCards @auth(level: USER) {
+  cards(where: { user: { id: { eq_expr: "auth.uid" } } }) {
+    id
+    name
+    lastFourDigits
+    brand
+    limitAmount
+    closingDay
+    dueDay
+    colorHex
+  }
+}
+
+query GetTransactionsByMonth($cardId: UUID!, $billingMonth: String!) @auth(level: USER) {
+  transactions(
+    where: {
+      user: { id: { eq_expr: "auth.uid" } }
+      card: { id: { eq: $cardId } }
+      billingMonth: { eq: $billingMonth }
+    }
+    orderBy: [{ purchaseDate: DESC }]
+  ) {
+    id
+    description
+    amount
+    purchaseDate
+    installmentNumber
+    totalInstallments
+    isPaid
+    category {
+      name
+      icon
+      colorHex
+    }
+  }
+}

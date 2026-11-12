@@ -1,5 +1,9 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  connectFirestoreEmulator,
+} from 'firebase/firestore';
 
 const config = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -12,10 +16,18 @@ const config = {
 
 const app = getApps().length ? getApp() : initializeApp(config);
 
+const useEmulator = process.env.EXPO_PUBLIC_USE_EMULATOR === 'true';
+const host = process.env.EXPO_PUBLIC_EMULATOR_HOST || 'localhost';
+
 let db;
 try {
   // Long polling evita problemas de conexão do Firestore no React Native
   db = initializeFirestore(app, { experimentalForceLongPolling: true });
+
+  // Só conecta no emulador quando EXPO_PUBLIC_USE_EMULATOR=true (ver .env.local)
+  if (useEmulator) {
+    connectFirestoreEmulator(db, host, 8080);
+  }
 } catch {
   // Já inicializado (hot reload)
   db = getFirestore(app);

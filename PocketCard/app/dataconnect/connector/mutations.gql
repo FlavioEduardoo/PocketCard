@@ -1,0 +1,51 @@
+mutation CreateCard(
+  $name: String!
+  $lastFourDigits: String!
+  $brand: String!
+  $limitAmount: Float!
+  $closingDay: Int!
+  $dueDay: Int!
+  $colorHex: String!
+) @auth(level: USER) {
+  card_insert(
+    data: {
+      userUid_expr: "auth.uid"
+      name: $name
+      lastFourDigits: $lastFourDigits
+      brand: $brand
+      limitAmount: $limitAmount
+      closingDay: $closingDay
+      dueDay: $dueDay
+      colorHex: $colorHex
+    }
+  )
+}
+
+mutation CreateTransaction(
+  $cardId: UUID!
+  $categoryId: UUID
+  $description: String!
+  $amount: Float!
+  $purchaseDate: Date!
+  $billingMonth: String!
+  $installmentNumber: Int!
+  $totalInstallments: Int!
+) @auth(level: USER) {
+  transaction_insert(
+    data: {
+      userUid_expr: "auth.uid"
+      cardId: $cardId
+      categoryId: $categoryId
+      description: $description
+      amount: $amount
+      purchaseDate: $purchaseDate
+      billingMonth: $billingMonth
+      installmentNumber: $installmentNumber
+      totalInstallments: $totalInstallments
+    }
+  )
+}
+
+mutation DeleteTransaction($id: UUID!) @auth(level: USER) {
+  transaction_delete(key: { id: $id })
+}

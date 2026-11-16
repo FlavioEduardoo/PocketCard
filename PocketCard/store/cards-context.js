@@ -1,32 +1,42 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
 import {
-  addDoc,
   collection,
   doc,
   increment,
   onSnapshot,
   orderBy,
   query,
+  setDoc,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { useAuth } from './auth-context';
 import { notifyLimitReached, syncDueReminders } from '../services/notifications';
 import { getInvoice } from '../utils/invoice';
+import { showAlert } from '../utils/alert';
 
 const CardsContext = createContext(null);
 
-const reportError = (e) => Alert.alert('Erro ao salvar no Firebase', e?.message || String(e));
+const reportError = (e) => showAlert('Erro no Firebase', e?.message || String(e));
 
 export function CardsProvider({ children }) {
+  const { user } = useAuth();
   const [cards, setCards] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [offline, setOffline] = useState(false);
 
-  // Tempo real: qualquer mudança no Firestore atualiza as telas
+  // Escuta dados do Firestore em tempo real
   useEffect(() => {
+    if (!user) {
+      setCards([]);
+      setTransactions([]);
+      setLoading(false);
+      return;
+    }
+
+    // Não bloqueia a UI com loading global: os dados chegam e atualizam instantaneamente
     const unsubCards = onSnapshot(
       query(collection(db, 'cards'), orderBy('createdAt', 'asc')),
       { includeMetadataChanges: true },
@@ -40,77 +50,147 @@ export function CardsProvider({ children }) {
         setLoading(false);
       }
     );
+
     const unsubTx = onSnapshot(
       collection(db, 'transactions'),
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setTransactions(list.sort((a, b) => b.date - a.date));
+        setTransactions(list.sort((a, b) => (b.date || 0) - (a.date || 0)));
       },
       (e) => setError(e.message)
     );
+
     return () => {
       unsubCards();
       unsubTx();
     };
-  }, []);
+  }, [user]);
 
   // Reagenda os avisos de vencimento sempre que cartões ou gastos mudam
   useEffect(() => {
-    if (loading) return;
+    if (loading || !user) return;
     const items = cards.map((card) => ({ card, invoice: getInvoice(card, transactions) }));
     syncDueReminders(items).catch(() => {});
-  }, [cards, transactions, loading]);
+  }, [cards, transactions, loading, user]);
 
-  // Não usa await: o Firestore aplica a gravação local na hora e sincroniza depois
+  /**
+   * Adiciona o cartão imediatamente na UI e sincroniza em background
+   */
   const addCard = (data) => {
-    addDoc(collection(db, 'cards'), { ...data, used: 0, createdAt: Date.now() }).catch(reportError);
+    const cardRef = doc(collection(db, 'cards'));
+    const newCard = {
+      ...data,
+      used: 0,
+      userId: user?.uid || null,
+      createdAt: Date.now(),
+    };
+
+    setCards((prev) => [...prev, { id: cardRef.id, ...newCard }]);
+    setDoc(cardRef, newCard).catch(reportError);
+    return cardRef.id;
   };
 
-  // Lança a despesa e desconta do limite do cartão escolhido (tudo em um único batch)
+  /**
+   * Lança a despesa atualizando a interface e enviando o batch ao Firestore
+   */
   const addExpense = ({ cardId, description, amount, date }) => {
-    const card = cards.find((c) => c.id === cardId);
+    const card = cards.find((c) => String(c.id) === String(cardId));
     if (!card) throw new Error('Cartão não encontrado.');
-    const batch = writeBatch(db);
-    batch.set(doc(collection(db, 'transactions')), {
+
+    const timestamp = date instanceof Date ? date.getTime() : new Date(date).getTime();
+    const txRef = doc(collection(db, 'transactions'));
+    const newTx = {
+      id: txRef.id,
       cardId,
       description,
       amount,
-      date: date.getTime(),
+      date: timestamp,
       paid: false,
+      userId: user?.uid || null,
+      createdAt: Date.now(),
+    };
+
+    setTransactions((prev) => [newTx, ...prev]);
+    setCards((prev) =>
+      prev.map((c) => (String(c.id) === String(cardId) ? { ...c, used: (c.used || 0) + amount } : c))
+    );
+
+    const batch = writeBatch(db);
+    batch.set(txRef, {
+      cardId,
+      description,
+      amount,
+      date: timestamp,
+      paid: false,
+      userId: user?.uid || null,
       createdAt: Date.now(),
     });
-    batch.update(doc(db, 'cards', cardId), { used: increment(amount) });
+    batch.update(doc(db, 'cards', String(cardId)), { used: increment(amount) });
     batch.commit().catch(reportError);
+
     if ((card.used || 0) + amount >= card.limit) {
       notifyLimitReached(card).catch(() => {});
     }
   };
 
-  // Excluir a despesa devolve o valor ao limite
-  const removeExpense = async (tx) => {
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'transactions', tx.id));
+  /**
+   * Exclui despesa estornando o valor do limite imediatamente
+   */
+  const removeExpense = (tx) => {
+    setTransactions((prev) => prev.filter((t) => String(t.id) !== String(tx.id)));
     if (!tx.paid) {
-      batch.update(doc(db, 'cards', tx.cardId), { used: increment(-tx.amount) });
+      setCards((prev) =>
+        prev.map((c) =>
+          String(c.id) === String(tx.cardId) ? { ...c, used: Math.max(0, (c.used || 0) - tx.amount) } : c
+        )
+      );
+    }
+
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'transactions', String(tx.id)));
+    if (!tx.paid) {
+      batch.update(doc(db, 'cards', String(tx.cardId)), { used: increment(-tx.amount) });
     }
     batch.commit().catch(reportError);
   };
 
-  // Pagar a fatura libera o limite e marca as despesas como pagas
-  const payInvoice = async (card, items) => {
-    const total = items.reduce((sum, t) => sum + t.amount, 0);
+  /**
+   * Paga fatura liberando o limite e marcando itens como pagos imediatamente
+   */
+  const payInvoice = (card, items) => {
+    if (!items || items.length === 0) return;
+    const total = items.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const itemIds = new Set(items.map((t) => String(t.id)));
+
+    setTransactions((prev) =>
+      prev.map((t) => (itemIds.has(String(t.id)) ? { ...t, paid: true } : t))
+    );
+    setCards((prev) =>
+      prev.map((c) =>
+        String(c.id) === String(card.id) ? { ...c, used: Math.max(0, (c.used || 0) - total) } : c
+      )
+    );
+
     const batch = writeBatch(db);
-    items.forEach((t) => batch.update(doc(db, 'transactions', t.id), { paid: true }));
-    batch.update(doc(db, 'cards', card.id), { used: increment(-total) });
+    items.forEach((t) => {
+      batch.update(doc(db, 'transactions', String(t.id)), { paid: true });
+    });
+    batch.update(doc(db, 'cards', String(card.id)), { used: increment(-total) });
     batch.commit().catch(reportError);
   };
 
-  const removeCard = async (card) => {
+  /**
+   * Exclui o cartão e suas transações vinculadas
+   */
+  const removeCard = (card) => {
+    setCards((prev) => prev.filter((c) => String(c.id) !== String(card.id)));
+    setTransactions((prev) => prev.filter((t) => String(t.cardId) !== String(card.id)));
+
     const batch = writeBatch(db);
     transactions
-      .filter((t) => t.cardId === card.id)
-      .forEach((t) => batch.delete(doc(db, 'transactions', t.id)));
-    batch.delete(doc(db, 'cards', card.id));
+      .filter((t) => String(t.cardId) === String(card.id))
+      .forEach((t) => batch.delete(doc(db, 'transactions', String(t.id))));
+    batch.delete(doc(db, 'cards', String(card.id)));
     batch.commit().catch(reportError);
   };
 

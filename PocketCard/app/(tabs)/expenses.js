@@ -1,9 +1,10 @@
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCards } from '../../store/cards-context';
 import { brl, fmtDate } from '../../utils/format';
 import { colors } from '../../utils/theme';
+import { confirmAction, showAlert } from '../../utils/alert';
 import FadeIn from '../../components/FadeIn';
 import { PrimaryButton } from '../../components/ui';
 
@@ -11,20 +12,26 @@ export default function ExpensesScreen() {
   const router = useRouter();
   const { cards, transactions, removeExpense } = useCards();
 
-  const confirmDelete = (tx) =>
-    Alert.alert('Excluir despesa', `Remover "${tx.description}"? O valor volta para o limite.`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: () => removeExpense(tx).catch((e) => Alert.alert('Erro', e.message)),
+  const confirmDelete = (tx) => {
+    confirmAction({
+      title: 'Excluir despesa',
+      message: `Remover "${tx.description}"? O valor de ${brl(tx.amount)} volta para o limite.`,
+      confirmText: 'Excluir',
+      destructive: true,
+      onConfirm: () => {
+        try {
+          removeExpense(tx);
+        } catch (e) {
+          showAlert('Erro ao excluir', e?.message || String(e));
+        }
       },
-    ]);
+    });
+  };
 
   return (
     <FlatList
       data={transactions}
-      keyExtractor={(t) => t.id}
+      keyExtractor={(t) => String(t.id)}
       contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1 }}
       ListHeaderComponent={
         <View style={{ marginBottom: 6 }}>
@@ -33,20 +40,24 @@ export default function ExpensesScreen() {
       }
       ListEmptyComponent={<Text style={s.empty}>Nenhuma despesa lançada.</Text>}
       renderItem={({ item, index }) => {
-        const card = cards.find((c) => c.id === item.cardId);
+        const card = cards.find((c) => String(c.id) === String(item.cardId));
         return (
           <FadeIn delay={Math.min(index, 8) * 50} style={s.row}>
             <View style={[s.dot, { backgroundColor: card?.color || colors.muted }]} />
             <View style={{ flex: 1 }}>
               <Text style={s.title}>{item.description}</Text>
               <Text style={s.sub}>
-                {card?.bank || 'Cartão removido'} · {fmtDate(item.date)}
+                {card?.bank || 'Cartão não encontrado'} · {fmtDate(item.date)}
                 {item.paid ? ' · paga' : ''}
               </Text>
             </View>
             <Text style={s.amount}>{brl(item.amount)}</Text>
-            <Pressable onPress={() => confirmDelete(item)} hitSlop={10}>
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            <Pressable
+              onPress={() => confirmDelete(item)}
+              hitSlop={12}
+              style={({ pressed }) => [{ padding: 6 }, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
             </Pressable>
           </FadeIn>
         );

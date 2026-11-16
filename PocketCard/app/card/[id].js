@@ -1,9 +1,10 @@
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCards } from '../../store/cards-context';
 import { getInvoice } from '../../utils/invoice';
 import { brl, fmtDate } from '../../utils/format';
 import { colors } from '../../utils/theme';
+import { confirmAction, showAlert } from '../../utils/alert';
 import CardItem from '../../components/CardItem';
 import { PrimaryButton } from '../../components/ui';
 
@@ -11,7 +12,8 @@ export default function CardDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { cards, transactions, payInvoice, removeCard } = useCards();
-  const card = cards.find((c) => c.id === id);
+
+  const card = cards.find((c) => String(c.id) === String(id));
 
   if (!card) {
     return (
@@ -24,27 +26,43 @@ export default function CardDetail() {
 
   const invoice = getInvoice(card, transactions);
 
-  const pay = () =>
-    Alert.alert('Pagar fatura', `Marcar ${brl(invoice.total)} como pago e liberar o limite?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Pagar',
-        onPress: () => payInvoice(card, invoice.items).catch((e) => Alert.alert('Erro', e.message)),
-      },
-    ]);
+  const handlePay = () => {
+    if (invoice.total <= 0 || invoice.items.length === 0) {
+      showAlert('Fatura sem pendências', 'Não há compras em aberto nesta fatura.');
+      return;
+    }
 
-  const remove = () =>
-    Alert.alert('Excluir cartão', 'O cartão e todas as despesas dele serão apagados.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Excluir',
-        style: 'destructive',
-        onPress: () => {
-          router.back();
-          removeCard(card).catch((e) => Alert.alert('Erro', e.message));
-        },
+    confirmAction({
+      title: 'Pagar fatura',
+      message: `Deseja pagar a fatura de ${brl(invoice.total)} do cartão ${card.bank}? As despesas serão marcadas como pagas e o limite será liberado imediatamente.`,
+      confirmText: 'Pagar fatura',
+      onConfirm: () => {
+        try {
+          payInvoice(card, invoice.items);
+          showAlert('Sucesso', 'Fatura paga e limite restabelecido!');
+        } catch (e) {
+          showAlert('Erro ao pagar fatura', e?.message || String(e));
+        }
       },
-    ]);
+    });
+  };
+
+  const handleRemove = () => {
+    confirmAction({
+      title: 'Excluir cartão',
+      message: `Tem certeza que deseja excluir o cartão ${card.bank}? O cartão e todas as despesas vinculadas a ele serão apagados permanentemente.`,
+      confirmText: 'Excluir cartão',
+      destructive: true,
+      onConfirm: () => {
+        try {
+          router.back();
+          removeCard(card);
+        } catch (e) {
+          showAlert('Erro ao excluir cartão', e?.message || String(e));
+        }
+      },
+    });
+  };
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
@@ -54,10 +72,11 @@ export default function CardDetail() {
         title="Nova despesa neste cartão"
         onPress={() => router.push({ pathname: '/new-expense', params: { cardId: card.id } })}
       />
+      
       <PrimaryButton
         title="Pagar fatura"
         variant="outline"
-        onPress={pay}
+        onPress={handlePay}
         disabled={invoice.total <= 0}
       />
 
@@ -68,7 +87,7 @@ export default function CardDetail() {
         <Text style={s.muted}>Nenhuma compra nesta fatura.</Text>
       ) : (
         invoice.items.map((t) => (
-          <View key={t.id} style={s.row}>
+          <View key={String(t.id)} style={s.row}>
             <View style={{ flex: 1 }}>
               <Text style={s.title}>{t.description}</Text>
               <Text style={s.sub}>{fmtDate(t.date)}</Text>
@@ -79,7 +98,11 @@ export default function CardDetail() {
       )}
 
       <View style={{ marginTop: 16 }}>
-        <PrimaryButton title="Excluir cartão" variant="danger" onPress={remove} />
+        <PrimaryButton
+          title="Excluir cartão"
+          variant="danger"
+          onPress={handleRemove}
+        />
       </View>
     </ScrollView>
   );

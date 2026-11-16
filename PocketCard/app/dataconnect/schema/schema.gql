@@ -1,0 +1,42 @@
+type User @table {
+  id: String! @col(name: "uid")
+  name: String!
+  email: String!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Card @table {
+  id: UUID! @default(expr: "uuidV4()")
+  user: User!
+  name: String!
+  lastFourDigits: String!
+  brand: String!
+  limitAmount: Float!
+  closingDay: Int!
+  dueDay: Int!
+  colorHex: String!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type Category @table {
+  id: UUID! @default(expr: "uuidV4()")
+  user: User
+  name: String!
+  icon: String!
+  colorHex: String!
+}
+
+type Transaction @table {
+  id: UUID! @default(expr: "uuidV4()")
+  user: User!
+  card: Card!
+  category: Category
+  description: String!
+  amount: Float!
+  purchaseDate: Date!
+  billingMonth: String!
+  installmentNumber: Int!
+  totalInstallments: Int!
+  isPaid: Boolean! @default(value: false)
+  createdAt: Timestamp! @default(expr: "request.time")
+}

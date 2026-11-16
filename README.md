@@ -455,6 +455,3 @@ docs: atualiza README com instruções do Firebase
 
 ---
 
-## 14. Licença
-
-Distribuído sob a licença MIT. Consulte o arquivo [LICENSE](./LICENSE) para mais detalhes.

@@ -1,6 +1,15 @@
 {
   "emulators": {
-  "firestore": { "host": "0.0.0.0", "port": 8080 },
-  "ui": { "enabled": true, "port": 4000 }
+    "auth": { "host": "0.0.0.0", "port": 9099 },
+    "firestore": { "host": "0.0.0.0", "port": 8080 },
+    "dataconnect": { "dataDir": "dataconnect/.dataconnect/pgliteData" },
+    "ui": { "enabled": true, "port": 4000 }
+  },
+  "dataconnect": { "source": "dataconnect" },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   }
 }

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useCards } from '../store/cards-context';
 import { brl, fmtDate, parseAmount } from '../utils/format';
 import { colors } from '../utils/theme';
+import { showAlert } from '../utils/alert';
 import { Chip, Field, PrimaryButton } from '../components/ui';
 
 export default function NewExpense() {
@@ -28,20 +29,21 @@ export default function NewExpense() {
     );
   }
 
-  const card = cards.find((c) => c.id === cardId);
+  const card = cards.find((c) => String(c.id) === String(cardId));
   const value = parseAmount(amount);
   const remaining = card ? card.limit - (card.used || 0) : 0;
   const exceeds = card && value > 0 && value > remaining;
 
   const save = () => {
-    if (!card) return Alert.alert('Atenção', 'Escolha um cartão.');
-    if (!description.trim()) return Alert.alert('Atenção', 'Informe uma descrição.');
-    if (!(value > 0)) return Alert.alert('Atenção', 'Informe um valor maior que zero.');
+    if (!card) return showAlert('Atenção', 'Escolha um cartão.');
+    if (!description.trim()) return showAlert('Atenção', 'Informe uma descrição.');
+    if (!(value > 0)) return showAlert('Atenção', 'Informe um valor maior que zero.');
+
     try {
       addExpense({ cardId, description: description.trim(), amount: value, date });
       router.back();
     } catch (e) {
-      Alert.alert('Erro ao salvar', e.message);
+      showAlert('Erro ao salvar', e?.message || String(e));
     }
   };
 
@@ -51,10 +53,10 @@ export default function NewExpense() {
       <View style={s.chips}>
         {cards.map((c) => (
           <Chip
-            key={c.id}
+            key={String(c.id)}
             label={c.bank}
             color={c.color}
-            selected={c.id === cardId}
+            selected={String(c.id) === String(cardId)}
             onPress={() => setCardId(c.id)}
           />
         ))}

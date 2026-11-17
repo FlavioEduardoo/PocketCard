@@ -1,28 +1,33 @@
-import { useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { useCards } from '../store/cards-context';
+import { useTheme } from '../utils/theme';
 import { brl, fmtDate, parseAmount } from '../utils/format';
-import { colors } from '../utils/theme';
 import { showAlert } from '../utils/alert';
-import { Chip, Field, PrimaryButton } from '../components/ui';
+import { Chip, Field, PrimaryButton, GlassCard } from '../components/ui';
+import { DatePickerModal } from '../components/CustomDatePicker';
 
 export default function NewExpense() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { cards, addExpense } = useCards();
+  const { colors } = useTheme();
+
   const [cardId, setCardId] = useState(params.cardId || cards[0]?.id || null);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   if (cards.length === 0) {
     return (
-      <View style={s.center}>
-        <Text style={s.muted}>Cadastre um cartão antes de lançar despesas.</Text>
-        <Link href="/new-card" style={s.link}>
+      <View style={[s.center, { backgroundColor: colors.bg }]}>
+        <Text style={[s.muted, { color: colors.muted }]}>
+          Cadastre um cartão antes de lançar despesas.
+        </Text>
+        <Link href="/new-card" style={[s.link, { color: colors.primary }]}>
           Novo cartão
         </Link>
       </View>
@@ -48,78 +53,127 @@ export default function NewExpense() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
-      <Text style={s.label}>Cartão</Text>
-      <View style={s.chips}>
-        {cards.map((c) => (
-          <Chip
-            key={String(c.id)}
-            label={c.bank}
-            color={c.color}
-            selected={String(c.id) === String(cardId)}
-            onPress={() => setCardId(c.id)}
-          />
-        ))}
-      </View>
+    <ScrollView
+      contentContainerStyle={[s.container, { backgroundColor: colors.bg }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      <GlassCard glow style={s.card}>
+        <Text style={[s.label, { color: colors.muted }]}>SELECIONE O CARTÃO</Text>
+        <View style={s.chips}>
+          {cards.map((c) => (
+            <Chip
+              key={String(c.id)}
+              label={c.bank}
+              color={c.color}
+              selected={String(c.id) === String(cardId)}
+              onPress={() => setCardId(c.id)}
+            />
+          ))}
+        </View>
 
-      <Field
-        label="Descrição"
-        value={description}
-        onChangeText={setDescription}
-        placeholder="Ex.: Mercado"
-      />
-      <Field
-        label="Valor (R$)"
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="decimal-pad"
-        placeholder="0,00"
-      />
-
-      <Text style={s.label}>Data da compra</Text>
-      <Pressable style={s.dateBtn} onPress={() => setShowPicker(true)}>
-        <Text style={s.dateText}>{fmtDate(date)}</Text>
-      </Pressable>
-      {showPicker && (
-        <DateTimePicker
-          value={date}
-          mode="date"
-          maximumDate={new Date()}
-          display={Platform.OS === 'ios' ? 'inline' : 'default'}
-          onChange={(_, selected) => {
-            setShowPicker(Platform.OS === 'ios');
-            if (selected) setDate(selected);
-          }}
+        <Field
+          label="Descrição da Compra"
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Ex.: Supermercado, Uber"
         />
-      )}
 
-      {card && (
-        <Text style={[s.preview, exceeds && { color: colors.danger }]}>
-          {exceeds
-            ? `Essa compra estoura o limite de ${card.bank} (restam ${brl(remaining)}).`
-            : `Limite restante em ${card.bank}: ${brl(remaining - (value > 0 ? value : 0))}`}
-        </Text>
-      )}
+        <Field
+          label="Valor (R$)"
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="decimal-pad"
+          placeholder="0,00"
+        />
 
-      <PrimaryButton title="Salvar despesa" onPress={save} />
+        <Text style={[s.label, { color: colors.muted }]}>DATA DA TRANSAÇÃO</Text>
+        <Pressable
+          style={[
+            s.dateBtn,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+          onPress={() => setShowDatePicker(true)}
+        >
+          <View style={[s.btnIconBox, { backgroundColor: 'rgba(124, 92, 252, 0.15)' }]}>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          </View>
+          <View>
+            <Text style={[s.dateBtnSub, { color: colors.muted }]}>Data Selecionada</Text>
+            <Text style={[s.dateBtnText, { color: colors.ink }]}>{fmtDate(date)}</Text>
+          </View>
+        </Pressable>
+
+        <DatePickerModal
+          visible={showDatePicker}
+          onClose={() => setShowDatePicker(false)}
+          onSelect={(d) => setDate(d)}
+          currentDate={date}
+          title="Data da Despesa"
+        />
+
+        {card && (
+          <View style={[s.limitWarning, { borderColor: exceeds ? colors.danger : colors.border }]}>
+            <Text style={[s.preview, { color: exceeds ? colors.danger : colors.muted }]}>
+              {exceeds
+                ? `Essa compra estoura o limite de ${card.bank} (restam ${brl(remaining)}).`
+                : `Limite restante em ${card.bank}: ${brl(remaining - (value > 0 ? value : 0))}`}
+            </Text>
+          </View>
+        )}
+
+        <View style={{ marginTop: 8 }}>
+          <PrimaryButton title="Lançar Despesa" onPress={save} />
+        </View>
+      </GlassCard>
     </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
+  container: { padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
-  muted: { color: colors.muted, textAlign: 'center' },
-  link: { color: colors.primary, fontSize: 16, fontWeight: '700' },
-  label: { fontSize: 13, color: colors.muted, marginBottom: 6 },
+  muted: { textAlign: 'center', fontSize: 14 },
+  link: { fontSize: 16, fontWeight: '700' },
+  card: { gap: 10 },
+  label: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 8 },
   chips: { flexDirection: 'row', gap: 10, marginBottom: 14, flexWrap: 'wrap' },
   dateBtn: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     marginBottom: 14,
   },
-  dateText: { fontSize: 16, color: colors.ink },
-  preview: { fontSize: 14, color: colors.muted, marginVertical: 14 },
+  btnIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateBtnSub: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  dateBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  limitWarning: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    marginBottom: 10,
+  },
+  preview: { fontSize: 13, fontWeight: '500' },
 });

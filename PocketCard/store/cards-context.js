@@ -7,6 +7,7 @@ import {
   orderBy,
   query,
   setDoc,
+  updateDoc,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -36,7 +37,6 @@ export function CardsProvider({ children }) {
       return;
     }
 
-    // Não bloqueia a UI com loading global: os dados chegam e atualizam instantaneamente
     const unsubCards = onSnapshot(
       query(collection(db, 'cards'), orderBy('createdAt', 'asc')),
       { includeMetadataChanges: true },
@@ -91,6 +91,17 @@ export function CardsProvider({ children }) {
   };
 
   /**
+   * Edita os dados de um cartão existente
+   */
+  const editCard = (cardId, updatedData) => {
+    setCards((prev) =>
+      prev.map((c) => (String(c.id) === String(cardId) ? { ...c, ...updatedData } : c))
+    );
+    const cardRef = doc(db, 'cards', String(cardId));
+    updateDoc(cardRef, updatedData).catch(reportError);
+  };
+
+  /**
    * Lança a despesa atualizando a interface e enviando o batch ao Firestore
    */
   const addExpense = ({ cardId, description, amount, date }) => {
@@ -131,6 +142,48 @@ export function CardsProvider({ children }) {
     if ((card.used || 0) + amount >= card.limit) {
       notifyLimitReached(card).catch(() => {});
     }
+  };
+
+  /**
+   * Edita uma despesa existente (recalculando diferença de valor se houver)
+   */
+  const editExpense = (txId, { cardId, description, amount, date }) => {
+    const oldTx = transactions.find((t) => String(t.id) === String(txId));
+    if (!oldTx) return;
+
+    const timestamp = date instanceof Date ? date.getTime() : new Date(date).getTime();
+    const diff = amount - oldTx.amount;
+
+    setTransactions((prev) =>
+      prev.map((t) =>
+        String(t.id) === String(txId)
+          ? { ...t, cardId, description, amount, date: timestamp }
+          : t
+      )
+    );
+
+    if (!oldTx.paid && diff !== 0) {
+      setCards((prev) =>
+        prev.map((c) =>
+          String(c.id) === String(cardId) ? { ...c, used: (c.used || 0) + diff } : c
+        )
+      );
+    }
+
+    const batch = writeBatch(db);
+    const txRef = doc(db, 'transactions', String(txId));
+    batch.update(txRef, {
+      cardId,
+      description,
+      amount,
+      date: timestamp,
+    });
+
+    if (!oldTx.paid && diff !== 0) {
+      batch.update(doc(db, 'cards', String(cardId)), { used: increment(diff) });
+    }
+
+    batch.commit().catch(reportError);
   };
 
   /**
@@ -203,7 +256,9 @@ export function CardsProvider({ children }) {
         error,
         offline,
         addCard,
+        editCard,
         addExpense,
+        editExpense,
         removeExpense,
         payInvoice,
         removeCard,

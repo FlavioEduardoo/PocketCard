@@ -4,6 +4,7 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  updateProfile,
 } from 'firebase/auth';
 import { auth } from '../services/firebase';
 
@@ -13,6 +14,7 @@ const AuthContext = createContext({
   login: async () => {},
   register: async () => {},
   logout: async () => {},
+  updateUserProfile: async () => {},
 });
 
 export function AuthProvider({ children }) {
@@ -32,8 +34,23 @@ export function AuthProvider({ children }) {
     return await signInWithEmailAndPassword(auth, email.trim(), password);
   };
 
-  const register = async (email, password) => {
-    return await createUserWithEmailAndPassword(auth, email.trim(), password);
+  const register = async (email, password, displayName = '') => {
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    if (displayName.trim()) {
+      await updateProfile(cred.user, { displayName: displayName.trim() });
+      setUser({ ...cred.user, displayName: displayName.trim() });
+    }
+    return cred;
+  };
+
+  const updateUserProfile = async ({ displayName, photoURL }) => {
+    if (!auth.currentUser) return;
+    const updates = {};
+    if (displayName !== undefined) updates.displayName = displayName.trim();
+    if (photoURL !== undefined) updates.photoURL = photoURL.trim();
+
+    await updateProfile(auth.currentUser, updates);
+    setUser({ ...auth.currentUser, ...updates });
   };
 
   const logout = async () => {
@@ -41,7 +58,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

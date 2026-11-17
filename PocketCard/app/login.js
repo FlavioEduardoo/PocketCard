@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../store/auth-context';
+import { getOrCreateUserProfile } from '../services/firestore';
 import { colors } from '../utils/theme';
 
 export default function LoginScreen() {
@@ -32,7 +33,9 @@ export default function LoginScreen() {
     setLoading(true);
     setErrorMessage('');
     try {
-      await login(email, password);
+      const cred = await login(email, password);
+await getOrCreateUserProfile(cred.user.uid, cred.user.email);
+router.replace('/(tabs)');
       router.replace('/(tabs)');
     } catch (error) {
       let msg = 'Erro ao realizar login. Verifique suas credenciais.';
